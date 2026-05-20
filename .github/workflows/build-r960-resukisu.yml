@@ -105,6 +105,192 @@ jobs:
           curl -LSs "${{ github.event.inputs.resukisu_setup_url }}" |
           bash -
 
+          echo "===== APPLYING INLINE MANUAL HOOK PATCHES ====="
+          cat << 'EOF' > resukisu_manual_hooks.patch
+          --- a/fs/stat.c
+          +++ b/fs/stat.c
+          @@ -353,6 +353,16 @@
+           	return cp_new_stat(&stat, statbuf);
+           }
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +__attribute__((hot)) 
+          +extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          +extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+          +#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
+          +extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
+          +#endif
+          +#endif
+          +
+           #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
+           SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+           		struct stat __user *, statbuf, int, flag)
+          @@ -360,6 +370,9 @@
+           	struct kstat stat;
+           	int error;
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_stat(&dfd, &filename, &flag);
+          +#endif
+           	error = vfs_fstatat(dfd, filename, &stat, flag);
+           	if (error)
+           		return error;
+          @@ -367,6 +380,9 @@
+           SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+           {
+           	struct kstat stat;
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_newfstat_ret(&fd, &statbuf);
+          +#endif
+           	int error = vfs_fstat(fd, &stat);
+           
+           	if (!error)
+          @@ -390,6 +406,9 @@
+           SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+           {
+           	struct kstat stat;
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_fstat64_ret(&fd, &statbuf);
+          +#endif
+           	int error = vfs_fstat(fd, &stat);
+           
+           	if (!error)
+          @@ -504,6 +523,9 @@
+           	struct kstat stat;
+           	int error;
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_stat(&dfd, &filename, &flag); 
+          +#endif
+           	error = vfs_fstatat(dfd, filename, &stat, flag);
+           	if (error)
+           		return error;
+          --- a/fs/exec.c
+          +++ b/fs/exec.c
+          @@ -1886,12 +1886,24 @@
+           	return retval;
+           }
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +__attribute__((hot))
+          +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
+          +#endif
+          +
+           int do_execve(struct filename *filename,
+           	const char __user *const __user *__argv,
+           	const char __user *const __user *__envp)
+           {
+           	struct user_arg_ptr argv = { .ptr.native = __argv };
+           	struct user_arg_ptr envp = { .ptr.native = __envp };
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+          +#endif
+           	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+           }
+           
+          @@ -1919,6 +1931,10 @@
+           		.is_compat = true,
+           		.ptr.compat = __envp,
+           	};
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+          +#endif
+           	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+           }
+          --- a/fs/open.c
+          +++ b/fs/open.c
+          @@ -450,8 +450,14 @@
+           	return res;
+           }
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +__attribute__((hot)) 
+          +extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);
+          +#endif
+          +
+           SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+           {
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          +#endif
+           	return do_faccessat(dfd, filename, mode);
+           }
+          --- a/kernel/reboot.c
+          +++ b/kernel/reboot.c
+          @@ -277,6 +277,10 @@
+            *
+            * reboot doesn't sync: do that yourself before calling this.
+            */
+          +
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
+          +#endif
+           
+           SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+           		void __user *, arg)
+          @@ -284,6 +288,9 @@
+           	char buffer[256];
+           	int ret = 0;
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+          +#endif
+           	/* We only trust the superuser with rebooting the system. */
+           	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+           		return -EPERM;
+          --- a/drivers/input/input.c
+          +++ b/drivers/input/input.c
+          @@ -436,11 +436,20 @@
+            * to 'seed' initial state of a switch or initial position of absolute
+            * axis, etc.
+            */
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +extern bool ksu_input_hook __read_mostly;
+          +extern __attribute__((cold)) int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
+          +#endif
+          +
+           void input_event(struct input_dev *dev,
+           		 unsigned int type, unsigned int code, int value)
+           {
+           	unsigned long flags;
+           
+          +#ifdef CONFIG_KSU_MANUAL_HOOK
+          +	if (unlikely(ksu_input_hook))
+          +		ksu_handle_input_handle_event(&type, &code, &value);
+          +#endif
+           
+           	if (is_event_supported(type, dev->evbit, EV_MAX)) {
+            
+           		spin_lock_irqsave(&dev->event_lock, flags);
+          --- a/security/selinux/ss/services.c
+          +++ b/security/selinux/ss/services.c
+          @@ -76,7 +76,7 @@
+           int selinux_policycap_openperm;
+           int selinux_policycap_alwaysnetwork;
+           
+          -static DEFINE_RWLOCK(policy_rwlock);
+          +DEFINE_RWLOCK(policy_rwlock);
+           
+           static struct sidtab sidtab;
+           struct policydb policydb;
+          --- a/security/selinux/hooks.c
+          +++ b/security/selinux/hooks.c
+          @@ -95,3 +95,3 @@
+           
+          -static struct security_operations selinux_ops = {
+          +struct security_operations selinux_ops = {
+           	.name =		"selinux",
+          --- a/security/selinux/selinuxfs.c
+          +++ b/security/selinux/selinuxfs.c
+          @@ -41,3 +41,3 @@
+           #include "conditional.h"
+           
+          -static DEFINE_MUTEX(sel_mutex);
+          +DEFINE_MUTEX(sel_mutex);
+          EOF
+
+          patch -p1 < resukisu_manual_hooks.patch
+
           echo "===== ReSukiSU FILE CHECK ====="
           find . -maxdepth 5 \( -iname "*resukisu*" -o -iname "*kernelsu*" -o -iname "*ksu*" \) |
           head -150
@@ -130,42 +316,33 @@ jobs:
 
           printf "" > .scmversion
 
-          ./scripts/config --file out_resukisu/.config --set-str LOCALVERSION "-33003255-abR960XXU2CZB6" ||
-          true
-          ./scripts/config --file out_resukisu/.config -d LOCALVERSION_AUTO ||
-          true
+          ./scripts/config --file out_resukisu/.config --set-str LOCALVERSION "-33003255-abR960XXU2CZB6" || true
+          ./scripts/config --file out_resukisu/.config -d LOCALVERSION_AUTO || true
 
           # Ensure symbols are fully exposed for ReSukiSU's dynamic hook resolution engine
           ./scripts/config --file out_resukisu/.config -e KALLSYMS || true
           ./scripts/config --file out_resukisu/.config -e KALLSYMS_ALL || true
 
-          ./scripts/config --file out_resukisu/.config -d MODULE_SIG_PROTECT ||
-          true
-          ./scripts/config --file out_resukisu/.config -d UH ||
-          true
-          ./scripts/config --file out_resukisu/.config -d RKP ||
-          true
-          ./scripts/config --file out_resukisu/.config -d KDP ||
-          true
-          ./scripts/config --file out_resukisu/.config -d SECURITY_DEFEX ||
-          true
-          ./scripts/config --file out_resukisu/.config -d SVSMC ||
-          true
-          ./scripts/config --file out_resukisu/.config -d SAMSUNG_PRODUCT_SHIP ||
-          true
+          # Enforce ReSukiSU Manual Hook engine configuration for Non-GKI hardware
+          ./scripts/config --file out_resukisu/.config -e KSU_MANUAL_HOOK || true
+          ./scripts/config --file out_resukisu/.config -e RESUKISU_MANUAL_HOOK || true
 
-          ./scripts/config --file out_resukisu/.config -e KSU ||
-          true
-          ./scripts/config --file out_resukisu/.config -e KERNELSU ||
-          true
-          ./scripts/config --file out_resukisu/.config -e RESUKISU ||
-          true
+          ./scripts/config --file out_resukisu/.config -d MODULE_SIG_PROTECT || true
+          ./scripts/config --file out_resukisu/.config -d UH || true
+          ./scripts/config --file out_resukisu/.config -d RKP || true
+          ./scripts/config --file out_resukisu/.config -d KDP || true
+          ./scripts/config --file out_resukisu/.config -d SECURITY_DEFEX || true
+          ./scripts/config --file out_resukisu/.config -d SVSMC || true
+          ./scripts/config --file out_resukisu/.config -d SAMSUNG_PRODUCT_SHIP || true
+
+          ./scripts/config --file out_resukisu/.config -e KSU || true
+          ./scripts/config --file out_resukisu/.config -e KERNELSU || true
+          ./scripts/config --file out_resukisu/.config -e RESUKISU || true
 
           make O=out_resukisu olddefconfig
 
           echo "===== SAMSUNG BLOCKER STRICT CHECK ====="
-          grep -Ei "LOCALVERSION|KSU|KERNELSU|RESUKISU|MODULE_SIG_PROTECT|CONFIG_UH|CONFIG_RKP|CONFIG_KDP|CONFIG_SECURITY_DEFEX|CONFIG_SVSMC|CONFIG_SAMSUNG_PRODUCT_SHIP" out_resukisu/.config ||
-          true
+          grep -Ei "LOCALVERSION|KSU|KERNELSU|RESUKISU|MODULE_SIG_PROTECT|CONFIG_UH|CONFIG_RKP|CONFIG_KDP|CONFIG_SECURITY_DEFEX|CONFIG_SVSMC|CONFIG_SAMSUNG_PRODUCT_SHIP" out_resukisu/.config || true
 
           BAD=0
           for sym in \
@@ -177,15 +354,13 @@ jobs:
             CONFIG_SVSMC \
             CONFIG_SAMSUNG_PRODUCT_SHIP
           do
-            if grep -q "^${sym}=y" out_resukisu/.config;
-            then
+            if grep -q "^${sym}=y" out_resukisu/.config; then
               echo "ERROR: $sym is still enabled"
               BAD=1
             fi
           done
 
-          if [ "$BAD" = "1" ];
-          then
+          if [ "$BAD" = "1" ]; then
             echo "Samsung blocker config still enabled. Stop build."
             exit 1
           fi
@@ -208,14 +383,12 @@ jobs:
           normalize_img() {
             name="$1"
 
-            if [ -f "firmware/${name}.img" ];
-            then
+            if [ -f "firmware/${name}.img" ]; then
               cp "firmware/${name}.img" "work/firmware/${name}.img"
               return 0
             fi
 
-            if [ -f "firmware/${name}.img.lz4" ];
-            then
+            if [ -f "firmware/${name}.img.lz4" ]; then
               lz4 -d -f "firmware/${name}.img.lz4" "work/firmware/${name}.img"
               return 0
             fi
@@ -237,8 +410,7 @@ jobs:
 
           echo "===== Download avbtool with retries/fallbacks ====="
 
-          if [ -f "tools/avbtool.py" ];
-          then
+          if [ -f "tools/avbtool.py" ]; then
             echo "Using repo-local tools/avbtool.py"
             cp tools/avbtool.py avbtool.py
           else
@@ -284,8 +456,7 @@ jobs:
 
           echo "===== avbtool check ====="
           python3 avbtool.py --help >/dev/null
-          python3 avbtool.py --version ||
-          true
+          python3 avbtool.py --version || true
           echo "avbtool OK"
 
       - name: Repack boot.img with ReSukiSU Image
@@ -378,8 +549,7 @@ jobs:
           cp work/firmware/init_boot.img work/firmware/init_boot_refooter.img
 
           echo "===== Re-footer boot.img with local AVB key rollback index 2 ====="
-          python3 avbtool.py erase_footer --image work/firmware/boot.img ||
-          true
+          python3 avbtool.py erase_footer --image work/firmware/boot.img || true
 
           python3 avbtool.py add_hash_footer \
             --image work/firmware/boot.img \
@@ -390,99 +560,7 @@ jobs:
             --rollback_index 2
 
           echo "===== Re-footer init_boot.img with same local AVB key rollback index 2 ====="
-          python3 avbtool.py erase_footer --image work/firmware/init_boot_refooter.img ||
-          true
+          python3 avbtool.py erase_footer --image work/firmware/init_boot_refooter.img || true
 
           python3 avbtool.py add_hash_footer \
-            --image work/firmware/init_boot_refooter.img \
-            --partition_name init_boot \
-            --partition_size 16777216 \
-            --algorithm SHA256_RSA4096 \
-            --key avb_keys/r960_local_avb.pem \
-            --rollback_index 2
-
-          mv work/firmware/init_boot_refooter.img work/firmware/init_boot.img
-
-          echo "===== boot AVB info ====="
-          python3 avbtool.py info_image --image work/firmware/boot.img ||
-          true
-
-          echo "===== init_boot AVB info ====="
-          python3 avbtool.py info_image --image work/firmware/init_boot.img ||
-          true
-
-      - name: Generate new top-level vbmeta.img
-        run: |
-          set -e
-
-          python3 avbtool.py make_vbmeta_image \
-            --output work/firmware/vbmeta.img \
-            --algorithm SHA256_RSA4096 \
-            --key avb_keys/r960_local_avb.pem \
-            --rollback_index 2 \
-            --flags 3 \
-            --prop com.android.build.boot.os_version:16 \
-            --prop com.android.build.boot.security_patch:2026-02-05 \
-            --include_descriptors_from_image work/firmware/boot.img \
-            --include_descriptors_from_image work/firmware/init_boot.img
-
-          echo "===== New vbmeta info ====="
-          python3 avbtool.py info_image --image work/firmware/vbmeta.img
-
-      - name: Build plain POSIX Odin/NetOdin AP tar
-        run: |
-          set -e
-
-          mkdir -p final_ap
-
-          cp work/firmware/boot.img final_ap/boot.img
-          cp work/firmware/init_boot.img final_ap/init_boot.img
-          cp work/firmware/vbmeta.img final_ap/vbmeta.img
-
-          tar --format=posix -cf dist/R960_ReSukiSU_AP.tar -C final_ap boot.img init_boot.img vbmeta.img
-
-          cp dist/R960_ReSukiSU_AP.tar dist/R960_ReSukiSU_AP.tar.md5
-          md5sum dist/R960_ReSukiSU_AP.tar >> dist/R960_ReSukiSU_AP.tar.md5
-
-          sha256sum \
-            dist/Image-ReSukiSU-R960 \
-            dist/resukisu.config \
-            dist/R960_ReSukiSU_AP.tar \
-            dist/R960_ReSukiSU_AP.tar.md5 \
-            > dist/SHA256SUMS.txt
-
-          cat > dist/RELEASE_NOTES.txt <<'EOF'
-          SM-R960 Galaxy Watch6 Classic ReSukiSU AP
-
-          Target firmware:
-          - R960XXU2CZB6
-          - Android 16
-          - Security patch 2026-02-05
-          - Rollback index 2
-
-          Package contents:
-          - boot.img
-          - init_boot.img
-          - vbmeta.img
-
-          Flash only after bootloader unlock.
-          This AP tar is for SM-R960 R960XXU2CZB6 only.
-          EOF
-
-          echo "===== DIST FILES ====="
-          ls -lh dist
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: r960-resukisu-ap-${{ github.run_number }}
-          name: SM-R960 ReSukiSU AP ${{ github.run_number }}
-          body_path: dist/RELEASE_NOTES.txt
-          files: |
-            dist/R960_ReSukiSU_AP.tar
-            dist/R960_ReSukiSU_AP.tar.md5
-            dist/Image-ReSukiSU-R960
-            dist/resukisu.config
-            dist/SHA256SUMS.txt
-            dist/RELEASE_NOTES.txt
-            
+      
