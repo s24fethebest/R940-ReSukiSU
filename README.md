@@ -6,13 +6,13 @@ This project targets the firmware and kernel version below:
 
 | Item | Value |
 |---|---|
-| Device | Samsung Galaxy Watch6 Classic |
+| Device | Samsung Galaxy Watch6 44mm |
 | Model | `SM-R940` |
 | Codename | `fresh6bl` |
 | Product | `fresh6blue` |
-| Firmware | `R940XXS2CZE1` |
+| Firmware | `R940XXS2CZB6` |
 | Android | `16` |
-| Kernel | `5.15.180-33003255-abR940XXS2CZE1` |
+| Kernel | `5.15.180-33003255-abR940XXS2CZB6` |
 | Platform | `s5e5515` / `erd5515` |
 | Bootloader | Unlocked required |
 | Verified boot after custom flash | Expected: `orange` |
