@@ -1,6 +1,6 @@
-# R960-ReSukiSU
+# R940-ReSukiSU
 
-Custom ReSukiSU kernel/AP build workflow and usage notes for the Samsung Galaxy Watch6 Classic **SM-R960 / wise6bl**.
+Custom ReSukiSU kernel/AP build workflow and usage notes for the Samsung Galaxy Watch6 44mm **SM-R940 / fresh6bl**.
 
 This project targets the firmware and kernel version below:
 
@@ -24,7 +24,7 @@ This project targets the firmware and kernel version below:
 
 Confirmed working:
 
-- ReSukiSU kernel boots on `SM-R960`.
+- ReSukiSU kernel boots on `SM-R940`.
 - ReSukiSU Manager can detect the kernel as **Working**.
 - Root shell works through ReSukiSU's `libksud.so` command:
 
@@ -168,13 +168,13 @@ Start root shell:
 If root works, the prompt changes from:
 
 ```text
-wise6bl:/ $
+fresh6bl:/ $
 ```
 
 to:
 
 ```text
-wise6bl:/ #
+fresh6bl:/ #
 ```
 
 Test root:
@@ -228,7 +228,7 @@ Start root shell:
 If root works, the prompt changes to:
 
 ```text
-wise6bl:/ #
+fresh6bl:/ #
 ```
 
 Test root:
@@ -346,7 +346,7 @@ done
 Your prompt must become:
 
 ```text
-wise6bl:/ #
+fresh6bl:/ #
 ```
 
 ---
@@ -684,7 +684,7 @@ Recommended inputs:
 ```text
 resukisu_setup_url = https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh
 source_release_tag = source-tarballs
-firmware_release_tag = firmware-r960-czb6
+firmware_release_tag = firmware-r940-czb6
 ```
 
 Required release assets:
@@ -693,10 +693,10 @@ Required release assets:
 
 ```text
 Kernel.tar.gz
-R960XXU1CYK2_Kernel.tar.gz
+R940XXU1CYK2_Kernel.tar.gz
 ```
 
-`firmware-r960-czb6`:
+`firmware-r940-czb6`:
 
 ```text
 boot.img.lz4
